@@ -1,0 +1,168 @@
+// ==== Pin Assignments ====
+const int motorLF = 3;  // Left Front Motor
+const int motorLB = 4;  // Left Back Motor
+const int motorRF = 5;  // Right Front Motor
+const int motorRB = 6;  // Right Back Motor
+
+const int irSensorPin = 2;           // IR obstacle sensor
+const int humiditySensorPin = A0;    // Humidity sensor (fire detection)
+
+const int ledPin = 13;               // Built-in LED to flash when fire detected
+
+// ==== Thresholds ====
+const int humidityThreshold = 600;   // Adjust after testing your sensor
+const int irObstacleDetected = LOW;  // IR sensor reads LOW when obstacle is close
+
+// ==== Mapping Variables ====
+const int gridSize = 10; // Define the grid size
+int map[gridSize][gridSize]; // 2D array to store the map (0 = empty, 1 = obstacle)
+int robotX = 0, robotY = 0;  // Robot's current position in the grid
+
+void setup() {
+  // Setup motor pins
+  pinMode(motorLF, OUTPUT);
+  pinMode(motorLB, OUTPUT);
+  pinMode(motorRF, OUTPUT);
+  pinMode(motorRB, OUTPUT);
+
+  pinMode(irSensorPin, INPUT);
+  pinMode(ledPin, OUTPUT);
+
+  Serial.begin(9600);
+
+  // Initialize the map to all zeros (no obstacles)
+  for (int i = 0; i < gridSize; i++) {
+    for (int j = 0; j < gridSize; j++) {
+      map[i][j] = 0;
+    }
+  }
+}
+
+void loop() {
+  int humidity = analogRead(humiditySensorPin);
+  int ir = digitalRead(irSensorPin);
+
+  Serial.print("Humidity: ");
+  Serial.print(humidity);
+  Serial.print(" | IR Sensor: ");
+  Serial.println(ir);
+
+  // ==== 1. Fire Detected ====
+  if (humidity > humidityThreshold) {
+    stopMotors();
+    Serial.println("🔥 FIRE DETECTED! Stopping movement.");
+
+    // Flash LED 3x to simulate alert
+    for (int i = 0; i < 3; i++) {
+      digitalWrite(ledPin, HIGH);
+      delay(300);
+      digitalWrite(ledPin, LOW);
+      delay(300);
+    }
+
+    delay(2000); // wait before continuing
+  }
+
+  // ==== 2. Obstacle Detected ====
+  else if (ir == irObstacleDetected) {
+    stopMotors();
+    Serial.println("🚧 Obstacle Detected! Scanning...");
+
+    // Turn left slightly and check
+    turnLeft();
+    delay(500);  // turn for a brief moment
+    int leftSensor = digitalRead(irSensorPin);
+
+    // Turn right slightly and check
+    turnRight();
+    delay(500);  // turn for a brief moment
+    int rightSensor = digitalRead(irSensorPin);
+
+    // Mark the current position as an obstacle
+    map[robotX][robotY] = 1;
+
+    // Decide which direction to go
+    if (leftSensor == irObstacleDetected && rightSensor == irObstacleDetected) {
+      Serial.println("Both directions blocked! Reversing.");
+      reverse();
+      delay(1000); // reverse for a short period
+    } else if (leftSensor == irObstacleDetected) {
+      Serial.println("Going right!");
+      turnRight();
+      delay(1000); // turn right for a longer period
+    } else {
+      Serial.println("Going left!");
+      turnLeft();
+      delay(1000); // turn left for a longer period
+    }
+
+    delay(1000);  // delay before continuing to check again
+  }
+
+  // ==== 3. All Clear – Patrol Mode ====
+  else {
+    moveForward();
+    // Update robot's position on the map as it moves
+    robotX = (robotX + 1) % gridSize;  // Wrap around horizontally
+    robotY = (robotY + 1) % gridSize;  // Wrap around vertically
+  }
+
+  // Print map for debugging
+  printMap();
+
+  delay(100); // small loop delay
+}
+
+// ==== Movement Functions ====
+
+void moveForward() {
+  digitalWrite(motorLF, HIGH);
+  digitalWrite(motorLB, HIGH);
+  digitalWrite(motorRF, HIGH);
+  digitalWrite(motorRB, HIGH);
+}
+
+void stopMotors() {
+  digitalWrite(motorLF, LOW);
+  digitalWrite(motorLB, LOW);
+  digitalWrite(motorRF, LOW);
+  digitalWrite(motorRB, LOW);
+}
+
+void turnLeft() {
+  digitalWrite(motorLF, LOW);
+  digitalWrite(motorLB, LOW);
+  digitalWrite(motorRF, HIGH);
+  digitalWrite(motorRB, HIGH);
+}
+
+void turnRight() {
+  digitalWrite(motorLF, HIGH);
+  digitalWrite(motorLB, HIGH);
+  digitalWrite(motorRF, LOW);
+  digitalWrite(motorRB, LOW);
+}
+void reverse() {
+  digitalWrite(motorLF, LOW);
+  digitalWrite(motorLB, LOW);
+  digitalWrite(motorRF, LOW);
+  digitalWrite(motorRB, LOW);
+  delay(500);  // reverse for a short period
+  digitalWrite(motorLF, LOW);
+  digitalWrite(motorLB, HIGH);
+  digitalWrite(motorRF, LOW);
+  digitalWrite(motorRB, HIGH);
+}
+
+// ==== Mapping Functions ====
+
+void printMap() {
+  Serial.println("Current Map:");
+  for (int i = 0; i < gridSize; i++) {
+    for (int j = 0; j < gridSize; j++) {
+      Serial.print(map[i][j]);
+      Serial.print(" ");
+    }
+    Serial.println();
+  }
+}
