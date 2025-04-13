@@ -38,6 +38,10 @@ This project was developed as part of the AGI Agent Application Hackathon. It ai
 git clone https://github.com/rayyanafzal/emberguard.git
 
 # map prototype
+cd App
+npm install
+npm start
+
 ```
 
 
