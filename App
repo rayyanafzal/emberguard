@@ -1,0 +1,665 @@
+import React, { useEffect, useRef, useState } from "react";
+
+// Dynamic safe zone and configuration
+const FIRE_COUNT = 8; // Number of fires
+const FIRE_UPDATE_INTERVAL = 10000; // 10 seconds
+const DANGER_PROXIMITY = 0.03; // 30 meters in km
+const SAFE_ZONE_DISTANCE = 0.02; // ~2km away from user
+
+export default function App() {
+  const mapRef = useRef(null);
+  const [map, setMap] = useState(null);
+  const [fireZones, setFireZones] = useState([]);
+  const [pathPolyline, setPathPolyline] = useState(null);
+  const [userLocation, setUserLocation] = useState(null);
+  const [safeZone, setSafeZone] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [recalculating, setRecalculating] = useState(false);
+
+  // IMPORTANT: Replace this with your actual API key
+  // For hackathon purposes only - in production, use environment variables
+  const API_KEY = "AIzaSyAeG4FikrrwjnsSkiewbiCbnb9-AFvyFO4";
+
+  // Load Google Maps
+  useEffect(() => {
+    setLoading(true);
+    const script = document.createElement("script");
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${API_KEY}`;
+    script.async = true;
+    script.onload = initMap;
+    script.onerror = () => setError("Failed to load map. Please refresh the page.");
+    document.head.appendChild(script);
+
+    return () => {
+      if (document.head.contains(script)) {
+        document.head.removeChild(script);
+      }
+    };
+  }, []);
+
+  // Initialize Map
+  const initMap = () => {
+    try {
+      if (!mapRef.current) {
+        console.error("Map container ref is null");
+        setError("Map container not found");
+        return;
+      }
+
+      // Default to a central location until we get user's position
+      const mapInstance = new window.google.maps.Map(mapRef.current, {
+        center: { lat: 37.5452, lng: 127.0493 }, // Default location until we get user's
+        zoom: 17, // Closer zoom level
+        disableDefaultUI: false,
+        styles: darkMapStyles,
+        zoomControl: true,
+        mapTypeControl: false,
+        scaleControl: true,
+        streetViewControl: false,
+        rotateControl: false,
+        fullscreenControl: true
+      });
+      
+      setMap(mapInstance);
+      setLoading(false);
+    } catch (err) {
+      console.error("Map initialization error:", err);
+      setError("Failed to initialize map: " + err.message);
+      setLoading(false);
+    }
+  };
+
+  // Calculate safe zone based on user location
+  useEffect(() => {
+    if (!userLocation) return;
+    
+    // Calculate a safe zone in the opposite direction of most fires
+    const calculateSafeZone = () => {
+      // If no fires yet, create a default safe zone (east of user)
+      if (fireZones.length === 0) {
+        const defaultSafeZone = {
+          lat: userLocation.lat,
+          lng: userLocation.lng + SAFE_ZONE_DISTANCE
+        };
+        setSafeZone(defaultSafeZone);
+        return;
+      }
+      
+      // Find average fire position
+      const avgFireLat = fireZones.reduce((sum, fire) => sum + fire.lat, 0) / fireZones.length;
+      const avgFireLng = fireZones.reduce((sum, fire) => sum + fire.lng, 0) / fireZones.length;
+      
+      // Calculate vector from average fire to user
+      const vectorLat = userLocation.lat - avgFireLat;
+      const vectorLng = userLocation.lng - avgFireLng;
+      
+      // Normalize and extend this vector to get safe zone
+      const vectorLength = Math.sqrt(vectorLat * vectorLat + vectorLng * vectorLng);
+      const safeLat = userLocation.lat + (vectorLat / vectorLength) * SAFE_ZONE_DISTANCE;
+      const safeLng = userLocation.lng + (vectorLng / vectorLength) * SAFE_ZONE_DISTANCE;
+      
+      setSafeZone({ lat: safeLat, lng: safeLng });
+    };
+    
+    calculateSafeZone();
+  }, [userLocation, fireZones.length]);
+
+  // Update safe zone marker when it changes
+  useEffect(() => {
+    if (!map || !safeZone) return;
+    
+    // Clear existing safe zone marker
+    if (window.safeZoneMarker) {
+      window.safeZoneMarker.setMap(null);
+    }
+    
+    // Add safe zone marker
+    window.safeZoneMarker = new window.google.maps.Marker({
+      position: safeZone,
+      map: map,
+      title: "Safe Zone",
+      icon: {
+        path: window.google.maps.SymbolPath.CIRCLE,
+        scale: 10,
+        fillColor: "#22c55e", // green
+        fillOpacity: 0.7,
+        strokeColor: "#ffffff",
+        strokeWeight: 2
+      }
+    });
+    
+  }, [map, safeZone]);
+
+  // Simulate Fires around user's location
+  useEffect(() => {
+    if (!map || !userLocation) return;
+    
+    const simulateFires = () => {
+      setRecalculating(true);
+      // Clear previous fire circles
+      if (window.fireCircles) {
+        window.fireCircles.forEach(circle => circle.setMap(null));
+      }
+      
+      // Generate new fires with clustering behavior - centered around user location
+      let fires = [];
+      if (fireZones.length === 0) {
+        // Initial fires - around user with randomized placement
+        fires = Array.from({ length: FIRE_COUNT }, () => {
+          // Create fires in semi-random directions, but more concentrated in one half
+          const angle = Math.random() * Math.PI; // Only half circle
+          const distance = 0.003 + (Math.random() * 0.006); // 300m to 900m
+          
+          return {
+            lat: userLocation.lat + Math.sin(angle) * distance,
+            lng: userLocation.lng + Math.cos(angle) * distance,
+            intensity: Math.random() * 0.5 + 0.7 // Higher intensity 0.7-1.2
+          };
+        });
+      } else {
+        // Spread existing fires
+        fires = [...fireZones];
+        
+        // Move/spread fires randomly but with correlation to existing locations
+        fires = fires.map(fire => {
+          // 30% chance to spawn a new fire nearby
+          if (Math.random() < 0.3 && fires.length < FIRE_COUNT + 4) {
+            fires.push({
+              lat: fire.lat + (Math.random() - 0.5) * 0.003,
+              lng: fire.lng + (Math.random() - 0.5) * 0.003,
+              intensity: Math.min(fire.intensity * 0.9, 1.2)
+            });
+          }
+          
+          // Move existing fire
+          return {
+            lat: fire.lat + (Math.random() - 0.5) * 0.002, // Movement
+            lng: fire.lng + (Math.random() - 0.5) * 0.002, // Movement
+            intensity: Math.min(fire.intensity * 1.04, 1.6) // Fires grow in intensity slower (changed from 1.08 to 1.04)
+          };
+        });
+      }
+      
+      // Keep only the strongest fires if we have too many
+      if (fires.length > FIRE_COUNT + 5) {
+        fires.sort((a, b) => b.intensity - a.intensity);
+        fires = fires.slice(0, FIRE_COUNT + 5);
+      }
+      
+      setFireZones(fires);
+      
+      // Draw fire circles with better visibility
+      const circles = fires.map(fire => {
+        return new window.google.maps.Circle({
+          strokeColor: "#ef4444",
+          strokeOpacity: 0.8,
+          strokeWeight: 2,
+          fillColor: "#ef4444",
+          fillOpacity: 0.45 + (fire.intensity * 0.25), // Increased opacity
+          map,
+          center: { lat: fire.lat, lng: fire.lng },
+          radius: 120 + (fire.intensity * 100) // Size based on intensity
+        });
+      });
+      window.fireCircles = circles;
+      
+      // Recalculate path if user location and safe zone exist
+      if (userLocation && safeZone) {
+        calculateAndDrawDirectPath(userLocation, safeZone);
+      }
+      
+      setRecalculating(false);
+    };
+    
+    simulateFires();
+    const interval = setInterval(simulateFires, FIRE_UPDATE_INTERVAL);
+    return () => clearInterval(interval);
+  }, [map, userLocation, safeZone]);
+
+  // Get User Location and Stay Centered on User
+  useEffect(() => {
+    if (!map) return;
+    
+    const getLocation = () => {
+      try {
+        if (navigator.geolocation) {
+          navigator.geolocation.getCurrentPosition(
+            (pos) => {
+              const location = {
+                lat: pos.coords.latitude,
+                lng: pos.coords.longitude
+              };
+              handleLocationUpdate(location);
+            },
+            (err) => {
+              console.error("Geolocation error:", err);
+              // Fallback to simulated location
+              const simulatedLocation = { 
+                lat: 37.5452 + (Math.random() - 0.5) * 0.002, 
+                lng: 127.0493 + (Math.random() - 0.5) * 0.002 
+              };
+              handleLocationUpdate(simulatedLocation);
+            }
+          );
+        } else {
+          // No geolocation support, use simulated location
+          const simulatedLocation = { 
+            lat: 37.5452, 
+            lng: 127.0493 
+          };
+          handleLocationUpdate(simulatedLocation);
+        }
+      } catch (err) {
+        console.error("Location access error:", err);
+        handleLocationUpdate({ lat: 37.5452, lng: 127.0493 });
+      }
+    };
+    
+    const handleLocationUpdate = (location) => {
+      setUserLocation(location);
+      
+      // Always center on user
+      map.panTo(location);
+      
+      // Update user marker position
+      if (window.userMarker) {
+        window.userMarker.setPosition(location);
+      } else {
+        window.userMarker = new window.google.maps.Marker({
+          position: location,
+          map: map,
+          title: "Your Location",
+          icon: {
+            path: window.google.maps.SymbolPath.CIRCLE,
+            scale: 8,
+            fillColor: "#facc15", // yellow
+            fillOpacity: 1,
+            strokeColor: "#000000",
+            strokeWeight: 2
+          },
+          zIndex: 100 // Keep on top
+        });
+      }
+      
+      // Check for danger proximity
+      if (fireZones.length > 0) {
+        checkDangerProximity(location);
+      }
+    };
+    
+    // Initial location
+    getLocation();
+    
+    // Track location changes
+    const watchId = navigator.geolocation.watchPosition(
+      (pos) => {
+        const location = {
+          lat: pos.coords.latitude,
+          lng: pos.coords.longitude
+        };
+        handleLocationUpdate(location);
+      },
+      (err) => {
+        console.error("Watch position error:", err);
+      },
+      { 
+        enableHighAccuracy: true,
+        maximumAge: 30000,
+        timeout: 27000
+      }
+    );
+    
+    // For demo purposes - simulate subtle movements if GPS not working
+    const moveInterval = setInterval(() => {
+      if (userLocation) {
+        const newLocation = {
+          lat: userLocation.lat + (Math.random() - 0.5) * 0.0005,
+          lng: userLocation.lng + (Math.random() - 0.5) * 0.0005
+        };
+        handleLocationUpdate(newLocation);
+      }
+    }, 5000); // Move every 5 seconds
+    
+    return () => {
+      navigator.geolocation.clearWatch(watchId);
+      clearInterval(moveInterval);
+    };
+  }, [map, fireZones.length]);
+
+  // Calculate and draw direct path
+  const calculateAndDrawDirectPath = (start, end) => {
+    if (!map || !start || !end) return;
+    
+    // Clear any previous route
+    if (pathPolyline) {
+      pathPolyline.setMap(null);
+    }
+    
+    console.log("Drawing direct path from", start, "to", end);
+    
+    // Create a simple direct path polyline
+    const polyline = new window.google.maps.Polyline({
+      path: [start, end],
+      geodesic: true,
+      strokeColor: "#facc15", // yellow
+      strokeOpacity: 1.0,
+      strokeWeight: 5,
+      icons: [{
+        icon: {
+          path: window.google.maps.SymbolPath.FORWARD_CLOSED_ARROW
+        },
+        offset: '50%',
+        repeat: '100px'
+      }]
+    });
+    
+    polyline.setMap(map);
+    setPathPolyline(polyline);
+    setError(null);
+  };
+  
+  // Check if user is near a fire
+  const checkDangerProximity = (location) => {
+    const danger = fireZones.some(f =>
+      haversineDistance(location, f) < DANGER_PROXIMITY
+    );
+    
+    if (danger) {
+      // Show alert in UI
+      setError("🔥 위험! 화재 30m 이내에 있습니다! 즉시 대피하세요!"); // Korean warning
+      
+      // Also use browser notification if available
+      if (Notification && Notification.permission === "granted") {
+        new Notification("🔥 비상: 화재 근처에 있습니다! 대피 경로를 따르세요!");
+      } else if (Notification && Notification.permission !== "denied") {
+        Notification.requestPermission().then(permission => {
+          if (permission === "granted") {
+            new Notification("🔥 비상: 화재 근처에 있습니다! 대피 경로를 따르세요!");
+          }
+        });
+      }
+    }
+  };
+
+  // Render the UI with inline styles instead of Tailwind
+  return (
+    <div style={{ 
+      height: "100vh", 
+      width: "100vw", 
+      backgroundColor: "#111827", 
+      display: "flex",
+      flexDirection: "column",
+      position: "relative"
+    }}>
+      {/* Map container */}
+      <div 
+        ref={mapRef} 
+        style={{ 
+          width: "100%", 
+          height: "100%", 
+          position: "relative" 
+        }} 
+      />
+      
+      {/* Loading overlay */}
+      {loading && (
+        <div style={{
+          position: "absolute",
+          top: 0,
+          left: 0,
+          width: "100%",
+          height: "100%",
+          backgroundColor: "rgba(0, 0, 0, 0.7)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          zIndex: 10
+        }}>
+          <div style={{
+            color: "white",
+            fontSize: "1.5rem",
+            padding: "1rem",
+            backgroundColor: "#1f2937",
+            borderRadius: "0.5rem"
+          }}>
+            대피 지도 로딩 중... (Loading evacuation map...)
+          </div>
+        </div>
+      )}
+      
+      {/* Status indicators */}
+      <div style={{
+        position: "absolute",
+        bottom: 0,
+        left: 0,
+        right: 0,
+        padding: "1rem",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        zIndex: 5
+      }}>
+        {recalculating && (
+          <div style={{
+            backgroundColor: "#d97706",
+            color: "white",
+            padding: "0.5rem 1rem",
+            borderRadius: "0.5rem",
+            marginBottom: "0.5rem"
+          }}>
+            대피 경로 재계산 중... (Recalculating route...)
+          </div>
+        )}
+        
+        {error && (
+          <div style={{
+            backgroundColor: "#dc2626",
+            color: "white",
+            padding: "0.5rem 1rem",
+            borderRadius: "0.5rem",
+            marginBottom: "0.5rem",
+            fontWeight: "bold",
+            fontSize: "1.125rem",
+            animation: "pulse 2s infinite"
+          }}>
+            {error}
+          </div>
+        )}
+        
+        {/* Info panel */}
+        <div style={{
+          backgroundColor: "rgba(31, 41, 55, 0.9)",
+          color: "white",
+          padding: "1rem",
+          borderRadius: "0.5rem",
+          width: "100%",
+          maxWidth: "28rem"
+        }}>
+          <h2 style={{
+            fontSize: "1.25rem",
+            fontWeight: "bold",
+            marginBottom: "0.5rem"
+          }}>Ember Guard 화재 대피 도우미</h2>
+          
+          <div style={{
+            display: "grid",
+            gridTemplateColumns: "1fr 1fr",
+            gap: "0.5rem",
+            marginBottom: "0.5rem"
+          }}>
+            <div style={{ display: "flex", alignItems: "center" }}>
+              <div style={{
+                width: "1rem",
+                height: "1rem",
+                backgroundColor: "#facc15",
+                borderRadius: "9999px",
+                marginRight: "0.5rem"
+              }}></div>
+              <span>현재 위치 (Your location)</span>
+            </div>
+            <div style={{ display: "flex", alignItems: "center" }}>
+              <div style={{
+                width: "1rem",
+                height: "1rem",
+                backgroundColor: "#22c55e",
+                borderRadius: "9999px",
+                marginRight: "0.5rem"
+              }}></div>
+              <span>안전 지역 (Safe zone)</span>
+            </div>
+            <div style={{ display: "flex", alignItems: "center" }}>
+              <div style={{
+                width: "1rem",
+                height: "1rem",
+                backgroundColor: "#ef4444",
+                borderRadius: "9999px",
+                marginRight: "0.5rem"
+              }}></div>
+              <span>화재 지역 (Fire zones)</span>
+            </div>
+            <div style={{ display: "flex", alignItems: "center" }}>
+              <div style={{
+                width: "1rem",
+                height: "0.25rem",
+                backgroundColor: "#facc15",
+                marginRight: "0.5rem"
+              }}></div>
+              <span>대피 경로 (Evacuation path)</span>
+            </div>
+          </div>
+          
+          <div style={{
+            fontSize: "0.75rem",
+            opacity: 0.75,
+            marginTop: "0.5rem"
+          }}>
+            안전 지역에 도달하기 위해 노란색 경로를 따르세요. 경로는 자동으로 업데이트됩니다.
+            <br />
+            (Follow the yellow path to reach the safe zone. Path updates automatically.)
+          </div>
+          
+          <div style={{ marginTop: "1rem" }}>
+            <button 
+              style={{
+                backgroundColor: "#dc2626",
+                color: "white",
+                padding: "0.5rem 1rem",
+                borderRadius: "0.5rem",
+                width: "100%",
+                fontWeight: "bold",
+                cursor: "pointer",
+                border: "none"
+              }}
+              onClick={() => window.open('tel:119')}
+            >
+              🚨 비상: 119 신고 (EMERGENCY: CALL 119)
+            </button>
+          </div>
+        </div>
+      </div>
+      
+      {/* Add some CSS animations */}
+      <style>
+        {`
+          @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.5; }
+            100% { opacity: 1; }
+          }
+        `}
+      </style>
+    </div>
+  );
+}
+
+// Distance calculation using Haversine formula (in km)
+function haversineDistance(a, b) {
+  const R = 6371; // Earth's radius in km
+  const dLat = toRad(b.lat - a.lat);
+  const dLon = toRad(b.lng - a.lng);
+  const lat1 = toRad(a.lat);
+  const lat2 = toRad(b.lat);
+  
+  const a1 =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a1), Math.sqrt(1 - a1));
+  return R * c;
+}
+
+function toRad(x) {
+  return (x * Math.PI) / 180;
+}
+
+// Dark map styles with better readability
+const darkMapStyles = [
+  { elementType: "geometry", stylers: [{ color: "#1f2937" }] },
+  { elementType: "labels.text.fill", stylers: [{ color: "#f9fafb" }] },
+  { elementType: "labels.text.stroke", stylers: [{ color: "#1f2937" }] },
+  {
+    featureType: "administrative.locality",
+    elementType: "labels.text.fill",
+    stylers: [{ color: "#d1d5db" }]
+  },
+  {
+    featureType: "poi",
+    elementType: "labels.text.fill",
+    stylers: [{ color: "#d1d5db" }]
+  },
+  {
+    featureType: "poi.park",
+    elementType: "geometry",
+    stylers: [{ color: "#263c3f" }]
+  },
+  {
+    featureType: "poi.park",
+    elementType: "labels.text.fill",
+    stylers: [{ color: "#6b9a76" }]
+  },
+  {
+    featureType: "road",
+    elementType: "geometry",
+    stylers: [{ color: "#38b2ac" }]
+  },
+  {
+    featureType: "road",
+    elementType: "geometry.stroke",
+    stylers: [{ color: "#1a202c" }]
+  },
+  {
+    featureType: "road",
+    elementType: "labels.text.fill",
+    stylers: [{ color: "#f9fafb" }]
+  },
+  {
+    featureType: "road.highway",
+    elementType: "geometry",
+    stylers: [{ color: "#3182ce" }]
+  },
+  {
+    featureType: "road.highway",
+    elementType: "geometry.stroke",
+    stylers: [{ color: "#1a202c" }]
+  },
+  {
+    featureType: "transit",
+    elementType: "geometry",
+    stylers: [{ color: "#2f3948" }]
+  },
+  {
+    featureType: "transit.station",
+    elementType: "labels.text.fill",
+    stylers: [{ color: "#d1d5db" }]
+  },
+  {
+    featureType: "water",
+    elementType: "geometry",
+    stylers: [{ color: "#0c4a6e" }]
+  },
+  {
+    featureType: "water",
+    elementType: "labels.text.fill",
+    stylers: [{ color: "#4299e1" }]
+  }
+];
