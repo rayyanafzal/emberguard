@@ -42,6 +42,7 @@ cd App
 npm install
 npm start
 
+if it didnt work, put it on stackblitz.com
 ```
 
 
