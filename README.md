@@ -13,7 +13,7 @@ This project was developed as part of the AGI Agent Application Hackathon. It ai
 - ✅ **Feature 3**: If no safe path is available, the robot is able to create one by managing small fires
 
 ### 🖼️ Demo / Screenshots
-![screenshot](./screenshot.png)  
+![screenshot](./screenshot.jpg)  
 [Optional demo video link: e.g., YouTube]
 
 ### 🧩 Tech Stack
@@ -25,9 +25,9 @@ This project was developed as part of the AGI Agent Application Hackathon. It ai
 ### 🏗️ Project Structure
 ```
 📁 emberguardt/
-├── App/
 ├── Arduino/
 ├── index.html
+├── App
 ├──README.md
 ```
 
