@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fire Detection Robot - Product Showcase</title>
+    <style>
+      /* General Styles */
+      body {
+        font-family: Arial, sans-serif;
+        margin: 0;
+        padding: 0;
+        background: linear-gradient(to bottom, #2c3e50, #4ca1af);
+        color: white;
+        overflow-x: hidden;
+      }
+
+      header {
+        text-align: center;
+        padding: 20px;
+        background: rgba(0, 0, 0, 0.5);
+      }
+
+      header h1 {
+        font-size: 2.5em;
+        margin: 0;
+      }
+
+      header p {
+        font-size: 1.2em;
+        margin-top: 10px;
+      }
+
+      .container {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        padding: 20px;
+      }
+
+      /* Robot Schematic Section */
+      .schematic {
+        margin: 20px 0;
+        text-align: center;
+      }
+
+      .schematic img {
+        width: 300px;
+        border: 2px solid white;
+        border-radius: 10px;
+      }
+
+      .schematic h2 {
+        font-size: 1.8em;
+        margin-bottom: 10px;
+      }
+
+      /* Dashboard Section */
+      .dashboard {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 20px;
+        max-width: 1200px;
+        margin: 20px auto;
+      }
+
+      .map,
+      .sensor-data {
+        background: rgba(0, 0, 0, 0.7);
+        padding: 20px;
+        border-radius: 10px;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.5);
+      }
+
+      .map h3,
+      .sensor-data h3 {
+        font-size: 1.5em;
+        margin-bottom: 15px;
+      }
+
+      .map canvas {
+        width: 100%;
+        height: 300px;
+        background: #34495e;
+        border-radius: 10px;
+      }
+
+      .sensor-data ul {
+        list-style: none;
+        padding: 0;
+      }
+
+      .sensor-data li {
+        font-size: 1.2em;
+        margin: 10px 0;
+      }
+
+      /* Footer */
+      footer {
+        text-align: center;
+        padding: 20px;
+        background: rgba(0, 0, 0, 0.5);
+        margin-top: 20px;
+      }
+
+      footer p {
+        font-size: 1em;
+      }
+    </style>
+  </head>
+  <body>
+    <!-- Header -->
+    <header>
+      <h1>Fire Detection Robot</h1>
+      <p>Scanning for fires, generating safe routes, and saving lives.</p>
+    </header>
+    <!-- Main Content -->
+    <div class="container">
+      <!-- Robot Schematic -->
+      <div class="schematic">
+        <h2>Robot Design</h2>
+        <img src="https://via.placeholder.com/300x200?text=Robot+Schematic" alt="Robot Schematic">
+        <p>A compact Arduino-based robot with 4 DC motors and IR sensors.</p>
+      </div>
+      <!-- Dashboard -->
+      <div class="dashboard">
+        <!-- Map Section -->
+        <div class="map">
+          <h3>Generated Safe Route Map</h3>
+          <canvas id="mapCanvas"></canvas>
+        </div>
+        <!-- Sensor Data Section -->
+        <div class="sensor-data">
+          <h3>Sensor Data</h3>
+          <ul id="sensorData">
+            <li>IR Sensor 1: No Fire Detected</li>
+            <li>IR Sensor 2: Fire Detected!</li>
+            <li>IR Sensor 3: No Fire Detected</li>
+            <li>IR Sensor 4: No Fire Detected</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+    <!-- Footer -->
+    <footer>
+      <p>&copy; 2023 Fire Detection Robot. All rights reserved.</p>
+    </footer>
+    <!-- JavaScript for Interactivity -->
+    <script>
+      // Simulate dynamic updates to the map and sensor data
+      const sensorData = document.getElementById('sensorData');
+      const mapCanvas = document.getElementById('mapCanvas');
+      const ctx = mapCanvas.getContext('2d');
+      // Draw a simple building floor layout with fires and a safe route
+      function drawMap() {
+        ctx.clearRect(0, 0, mapCanvas.width, mapCanvas.height);
+        // Draw building floor layout (rooms and corridors)
+        ctx.strokeStyle = 'white';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(10, 10, 150, 100); // Room 1
+        ctx.strokeRect(170, 10, 150, 100); // Room 2
+        ctx.strokeRect(10, 120, 150, 100); // Room 3
+        ctx.strokeRect(170, 120, 150, 100); // Room 4
+        // Draw corridors connecting rooms
+        ctx.beginPath();
+        ctx.moveTo(85, 10); // Top corridor
+        ctx.lineTo(85, 220);
+        ctx.moveTo(245, 10); // Right corridor
+        ctx.lineTo(245, 220);
+        ctx.stroke();
+        // Draw fires (red circles)
+        fires.forEach(fire => {
+          ctx.fillStyle = 'red';
+          ctx.beginPath();
+          ctx.arc(fire.x, fire.y, 10, 0, Math.PI * 2);
+          ctx.fill();
+        });
+        // Draw safe route (green line)
+        ctx.strokeStyle = 'green';
+        ctx.lineWidth = 5;
+        ctx.beginPath();
+        ctx.moveTo(10, 220); // Start at bottom-left corner
+        ctx.lineTo(85, 220); // Move through the corridor
+        ctx.lineTo(85, 10); // Move up to the top corridor
+        ctx.lineTo(320, 10); // Exit through the right corridor
+        ctx.stroke();
+      }
+      // Fires array to store fire locations
+      let fires = [];
+      // Function to simulate fire detection
+      function simulateFires() {
+        // Clear existing fires
+        fires = [];
+        // Randomly generate 1-3 fires in different rooms
+        const numFires = Math.floor(Math.random() * 3) + 1; // 1 to 3 fires
+        for (let i = 0; i < numFires; i++) {
+          const room = Math.floor(Math.random() * 4); // Random room (0-3)
+          let x, y;
+          // Assign coordinates based on room
+          switch (room) {
+            case 0: // Room 1
+              x = Math.random() * 150 + 10;
+              y = Math.random() * 100 + 10;
+              break;
+            case 1: // Room 2
+              x = Math.random() * 150 + 170;
+              y = Math.random() * 100 + 10;
+              break;
+            case 2: // Room 3
+              x = Math.random() * 150 + 10;
+              y = Math.random() * 100 + 120;
+              break;
+            case 3: // Room 4
+              x = Math.random() * 150 + 170;
+              y = Math.random() * 100 + 120;
+              break;
+          }
+          fires.push({
+            x,
+            y
+          });
+        }
+      }
+      // Update sensor data dynamically
+      function updateSensorData() {
+        const sensors = [
+          Math.random() > 0.7 ? 'Fire Detected!' : 'No Fire Detected',
+          Math.random() > 0.7 ? 'Fire Detected!' : 'No Fire Detected',
+          Math.random() > 0.7 ? 'Fire Detected!' : 'No Fire Detected',
+          Math.random() > 0.7 ? 'Fire Detected!' : 'No Fire Detected',
+        ];
+        sensorData.innerHTML = sensors.map((status, index) => `
+						<li>IR Sensor ${index + 1}: ${status}</li>`).join('');
+      }
+
+      function initApp() {
+        setInterval(() => {
+          simulateFires(); // Update fire locations
+          drawMap(); // Redraw the map
+          updateSensorData(); // Update sensor data
+        }, 2000); // Update every 2 seconds
+      }
+      // Start the app
+      initApp();
+    </script>
+  </body>
+</html>
